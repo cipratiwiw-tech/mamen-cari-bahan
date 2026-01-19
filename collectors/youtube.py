@@ -2,6 +2,8 @@
 
 from time import sleep
 from urllib.parse import quote_plus
+from utils.time import utc_now_iso, utc_today
+
 import re
 
 
@@ -78,13 +80,20 @@ def collect_youtube_trends(page, keyword: str, max_videos: int = 30):
             results.append({
                 "platform": "youtube",
                 "keyword": keyword,
+
+                # --- TIME SNAPSHOT ---
+                "date": utc_today(),
+                "collected_at": utc_now_iso(),
+
+                # --- CONTENT ---
                 "title": title,
                 "channel": channel,
-                "views": views,          # INTEGER
+                "views": views,
                 "views_text": raw_views,
                 "upload_time": upload_time,
                 "url": video_url,
             })
+
 
         except Exception as e:
             print(f"[WARN] Skip index {i}: {e}")
