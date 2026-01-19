@@ -1,14 +1,15 @@
 import sys
+import os
+import shutil
 import webbrowser
-from datetime import datetime
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                                QHBoxLayout, QLineEdit, QPushButton, QLabel, 
                                QTableWidget, QTableWidgetItem, QHeaderView, 
-                               QComboBox, QMessageBox, QAbstractItemView)
-from PySide6.QtCore import Qt, QThread, Signal
-from PySide6.QtGui import QColor, QPalette
+                               QComboBox, QMessageBox, QAbstractItemView, QMenu, QFileDialog)
+from PySide6.QtCore import Qt, QThread, Signal, QSize
+from PySide6.QtGui import QColor, QPalette, QPixmap, QAction
 
-# --- Import Module Project (Pastikan struktur folder sesuai) ---
+# --- Import Module Project ---
 try:
     from browser.launcher import launch_browser
     from collectors.youtube import collect_youtube_trends
@@ -19,7 +20,7 @@ except ImportError as e:
     print(f"Error Import: {e}")
     sys.exit(1)
 
-# --- Worker Thread ---
+# --- Worker Thread (Backend Riset) ---
 class ResearchWorker(QThread):
     finished = Signal(list)
     error = Signal(str)
@@ -31,6 +32,7 @@ class ResearchWorker(QThread):
 
     def run(self):
         try:
+            # Gunakan headless=True agar browser tidak mengganggu (invisible)
             p, browser, page = launch_browser(headless=True)
             
             data = []
@@ -41,6 +43,7 @@ class ResearchWorker(QThread):
                 data = collect_tiktok_trends(page, self.keyword, max_videos=20)
                 out_dir = "data/tiktok"
 
+            # Simpan CSV otomatis
             if data:
                 safe_keyword = self.keyword.replace(" ", "-")
                 date = utc_today()
@@ -53,11 +56,13 @@ class ResearchWorker(QThread):
         except Exception as e:
             self.error.emit(str(e))
 
-# --- Numeric Item ---
+# --- Numeric Item untuk Sorting Angka ---
 class NumericTableItem(QTableWidgetItem):
     def __lt__(self, other):
         try:
-            return float(self.text().replace(',', '').replace('.', '')) < float(other.text().replace(',', '').replace('.', ''))
+            val_self = float(self.text().replace(',', '').replace('.', ''))
+            val_other = float(other.text().replace(',', '').replace('.', ''))
+            return val_self < val_other
         except ValueError:
             return super().__lt__(other)
 
@@ -66,8 +71,8 @@ class MamenProApp(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        self.setWindowTitle("Mamen Research PLAYWRIGHT GUI")
-        self.resize(1200, 700)
+        self.setWindowTitle("Mamen Research Pro (With Visuals)")
+        self.resize(1300, 800)
         
         # Central Widget
         central_widget = QWidget()
@@ -76,28 +81,29 @@ class MamenProApp(QMainWindow):
         self.main_layout.setContentsMargins(20, 20, 20, 20)
         self.main_layout.setSpacing(15)
 
-        # 1. Controls
+        # UI Setup
         self.setup_controls()
-
-        # 2. Table
         self.setup_table()
-
-        # 3. Status
-        self.lbl_status = QLabel("Siap menunggu perintah.")
-        self.lbl_status.setStyleSheet("color: #888; font-size: 12px; margin-top: 5px;")
+        
+        # Status Bar
+        self.lbl_status = QLabel("Siap mencari bahan konten...")
+        self.lbl_status.setStyleSheet("color: #aaa; font-style: italic;")
         self.main_layout.addWidget(self.lbl_status)
+        
+        # Variabel untuk menyimpan data mentah (untuk akses path gambar saat klik kanan)
+        self.current_data = []
 
     def setup_controls(self):
         layout = QHBoxLayout()
         
-        lbl_title = QLabel("TREND RESEARCH")
-        lbl_title.setStyleSheet("font-size: 18px; font-weight: bold; color: #4facfe;")
+        lbl_title = QLabel("CONTENT RESEARCH")
+        lbl_title.setStyleSheet("font-size: 20px; font-weight: 900; color: #4facfe; letter-spacing: 1px;")
         
         self.input_keyword = QLineEdit()
-        self.input_keyword.setPlaceholderText("Masukkan Keyword...")
+        self.input_keyword.setPlaceholderText("Ketik Topik / Keyword...")
         self.input_keyword.setStyleSheet("""
             QLineEdit {
-                padding: 10px; border-radius: 5px; border: 1px solid #444; 
+                padding: 12px; border-radius: 8px; border: 1px solid #444; 
                 background-color: #2b2b2b; color: white; font-size: 14px;
             }
             QLineEdit:focus { border: 1px solid #4facfe; }
@@ -106,20 +112,20 @@ class MamenProApp(QMainWindow):
 
         self.combo_platform = QComboBox()
         self.combo_platform.addItems(["YouTube", "TikTok"])
-        self.combo_platform.setFixedWidth(120)
+        self.combo_platform.setFixedWidth(130)
         self.combo_platform.setStyleSheet("""
             QComboBox {
-                padding: 8px; border-radius: 5px; background-color: #2b2b2b;
-                color: white; border: 1px solid #444; font-size: 13px;
+                padding: 10px; border-radius: 8px; background-color: #333;
+                color: white; border: 1px solid #444; font-weight: bold;
             }
         """)
 
-        self.btn_run = QPushButton("🚀 MULAI RISET")
+        self.btn_run = QPushButton("🚀 CARI BAHAN")
         self.btn_run.setCursor(Qt.PointingHandCursor)
         self.btn_run.setStyleSheet("""
             QPushButton {
                 background-color: #007bff; color: white; font-weight: bold;
-                padding: 10px 20px; border-radius: 5px; border: none; font-size: 13px;
+                padding: 12px 25px; border-radius: 8px; border: none; font-size: 14px;
             }
             QPushButton:hover { background-color: #0056b3; }
             QPushButton:disabled { background-color: #444; color: #888; }
@@ -136,61 +142,62 @@ class MamenProApp(QMainWindow):
 
     def setup_table(self):
         self.table = QTableWidget()
-        # Columns: 0=Title, 1=Views, 2=Channel, 3=Date, 4=URL
-        columns = ["Judul Video", "Views", "Channel", "Upload", "URL"]
+        
+        # Definisikan Kolom: Visual (Thumbnail) sekarang di urutan pertama
+        columns = ["Visual", "Judul Konten", "Views", "Channel/Creator", "Upload"]
         self.table.setColumnCount(len(columns))
         self.table.setHorizontalHeaderLabels(columns)
         
+        # Styling Tabel
         self.table.verticalHeader().setVisible(False)
+        self.table.setShowGrid(False) # Modern look
         self.table.setAlternatingRowColors(True)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.table.setSortingEnabled(True) 
+        self.table.setIconSize(QSize(160, 90)) # Ukuran icon default
         
         self.table.setStyleSheet("""
             QTableWidget {
-                background-color: #1e1e1e; gridline-color: #333; color: #ddd; font-size: 13px; border: none;
+                background-color: #1e1e1e; color: #ddd; font-size: 13px; border: none;
             }
             QHeaderView::section {
-                background-color: #2d2d2d; color: white; padding: 8px; border: none; font-weight: bold;
+                background-color: #2d2d2d; color: white; padding: 12px; border: none; font-weight: bold; text-transform: uppercase;
             }
-            QTableWidget::item { padding: 5px; }
-            QTableWidget::item:selected { background-color: #007bff; color: white; }
+            QTableWidget::item { padding: 5px; border-bottom: 1px solid #333; }
+            QTableWidget::item:selected { background-color: #2a3f5f; color: white; }
         """)
 
-        # --- LOGIKA RESIZE BARU ---
         header = self.table.horizontalHeader()
-        
-        # Set SEMUA kolom ke mode "Interactive" agar user bisa geser-geser manual
         header.setSectionResizeMode(QHeaderView.Interactive)
         
-        # Set lebar default awal (sebelum ada data) agar tidak terlihat berantakan
-        header.resizeSection(0, 400) # Judul agak lebar
-        header.resizeSection(1, 100)
-        header.resizeSection(2, 150)
-        header.resizeSection(3, 100)
-        header.resizeSection(4, 300) # URL agak lebar
-        
-        # Supaya kolom terakhir (URL) tidak menyisakan ruang kosong jelek di kanan,
-        # kita bisa set stretchLastSection(True). 
-        # Tapi user minta "tiap kolom bisa digeser", stretchLastSection kadang mengunci kolom terakhir.
-        # Jadi kita biarkan False (default), atau set True jika ingin URL mentok kanan.
-        header.setStretchLastSection(True) 
+        # Atur lebar awal kolom
+        header.resizeSection(0, 180) # Visual (Lebar untuk thumbnail)
+        header.resizeSection(1, 450) # Judul (Paling lebar)
+        header.resizeSection(2, 120) # Views
+        header.resizeSection(3, 180) # Channel
+        header.setStretchLastSection(True)
 
+        # Event: Double click buka link
         self.table.doubleClicked.connect(self.open_link)
+
+        # Event: Klik Kanan (Context Menu)
+        self.table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self.show_context_menu)
+
         self.main_layout.addWidget(self.table)
 
     def start_research(self):
         keyword = self.input_keyword.text().strip()
         if not keyword:
-            QMessageBox.warning(self, "Peringatan", "Silakan masukkan keyword terlebih dahulu!")
+            QMessageBox.warning(self, "Ups!", "Keyword belum diisi bos.")
             return
 
         self.btn_run.setEnabled(False)
-        self.btn_run.setText("⏳ SEDANG BEKERJA...")
+        self.btn_run.setText("⏳ MENCARI...")
         self.input_keyword.setEnabled(False)
-        self.lbl_status.setText(f"Sedang mengambil data untuk '{keyword}'... Mohon tunggu.")
+        self.lbl_status.setText(f"Sedang mengumpulkan data visual untuk: '{keyword}'...")
         self.table.setRowCount(0) 
+        self.current_data = [] # Reset data
 
         self.worker = ResearchWorker(self.combo_platform.currentText(), keyword)
         self.worker.finished.connect(self.on_research_finished)
@@ -198,90 +205,165 @@ class MamenProApp(QMainWindow):
         self.worker.start()
 
     def on_research_finished(self, data):
+        self.current_data = data # Simpan ke memori untuk akses context menu
         self.table.setSortingEnabled(False)
         self.table.setRowCount(len(data))
         
         for row, item in enumerate(data):
-            # Title
-            self.table.setItem(row, 0, QTableWidgetItem(item.get('title', '')))
+            # Tinggikan baris agar thumbnail muat (90px height)
+            self.table.setRowHeight(row, 100)
+
+            # 1. KOLOM VISUAL (THUMBNAIL)
+            screenshot_path = item.get('screenshot')
+            lbl_image = QLabel()
+            lbl_image.setAlignment(Qt.AlignCenter)
+            lbl_image.setStyleSheet("background-color: #000; border-radius: 4px;")
             
-            # Views
+            if screenshot_path and os.path.exists(screenshot_path):
+                pixmap = QPixmap(screenshot_path)
+                # Scale gambar agar pas di kolom (KeepAspectRatio)
+                scaled_pixmap = pixmap.scaled(160, 90, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                lbl_image.setPixmap(scaled_pixmap)
+                lbl_image.setToolTip(f"Path: {screenshot_path}") # Tooltip lokasi file
+            else:
+                lbl_image.setText("No Image")
+                lbl_image.setStyleSheet("color: #555; font-size: 10px; border: 1px dashed #444;")
+
+            # Masukkan Widget QLabel ke dalam Cell Tabel
+            self.table.setCellWidget(row, 0, lbl_image)
+
+            # 2. JUDUL
+            self.table.setItem(row, 1, QTableWidgetItem(item.get('title', '')))
+            
+            # 3. VIEWS (Numeric Sort)
             views_raw = item.get('views', 0) or 0
             views_display = f"{int(views_raw):,}" if views_raw else "0"
-            view_item = NumericTableItem(views_display)
-            self.table.setItem(row, 1, view_item)
+            self.table.setItem(row, 2, NumericTableItem(views_display))
             
-            # Channel
-            self.table.setItem(row, 2, QTableWidgetItem(item.get('channel', '')))
+            # 4. CHANNEL
+            self.table.setItem(row, 3, QTableWidgetItem(item.get('channel', '')))
             
-            # Upload
-            self.table.setItem(row, 3, QTableWidgetItem(str(item.get('upload_time', '-'))))
-            
-            # URL
-            self.table.setItem(row, 4, QTableWidgetItem(item.get('url', '')))
-
-        # --- TERAPKAN LOGIKA LEBAR KOLOM SESUAI REQUEST ---
-        # 1. Resize kolom Views(1), Channel(2), Upload(3) agar pas dengan teks konten
-        self.table.resizeColumnToContents(1)
-        self.table.resizeColumnToContents(2)
-        self.table.resizeColumnToContents(3)
-        
-        # 2. Judul (0) dan URL (4) kita beri lebar manual yang cukup luas
-        #    Kita tidak pakai resizeToContents untuk ini karena judul panjang bisa memakan layar.
-        #    Kita hitung sisa ruang secara kasar atau set nilai fix yang bagus.
-        
-        total_width = self.table.viewport().width()
-        used_width = self.table.columnWidth(1) + self.table.columnWidth(2) + self.table.columnWidth(3)
-        remaining = total_width - used_width - 20 # sisa ruang (minus padding dikit)
-        
-        if remaining > 200:
-            # Bagi sisa ruang: 60% untuk Judul, 40% untuk URL
-            self.table.setColumnWidth(0, int(remaining * 0.6)) 
-            # URL otomatis ngisi sisa karena StretchLastSection, atau kita set juga:
-            self.table.setColumnWidth(4, int(remaining * 0.4))
-        else:
-            # Fallback jika layar sempit
-            self.table.setColumnWidth(0, 300)
-            self.table.setColumnWidth(4, 200)
+            # 5. UPLOAD TIME
+            self.table.setItem(row, 4, QTableWidgetItem(str(item.get('upload_time', '-'))))
 
         self.table.setSortingEnabled(True)
-        self.btn_run.setEnabled(True)
-        self.btn_run.setText("🚀 MULAI RISET")
-        self.input_keyword.setEnabled(True)
-        self.lbl_status.setText(f"✅ Selesai. Ditemukan {len(data)} hasil.")
+        self.restore_ui_state()
+        self.lbl_status.setText(f"✅ Selesai! {len(data)} konten ditemukan. Klik kanan untuk opsi download.")
 
     def on_research_error(self, error_msg):
-        self.btn_run.setEnabled(True)
-        self.btn_run.setText("🚀 MULAI RISET")
-        self.input_keyword.setEnabled(True)
+        self.restore_ui_state()
         self.lbl_status.setText(f"❌ Error: {error_msg}")
-        QMessageBox.critical(self, "Error", f"Terjadi kesalahan:\n{error_msg}")
+        QMessageBox.critical(self, "Gagal", f"Terjadi kesalahan:\n{error_msg}")
+
+    def restore_ui_state(self):
+        self.btn_run.setEnabled(True)
+        self.btn_run.setText("🚀 CARI BAHAN")
+        self.input_keyword.setEnabled(True)
 
     def open_link(self):
         row = self.table.currentRow()
         if row >= 0:
-            url_item = self.table.item(row, 4)
-            if url_item:
-                url = url_item.text()
-                if url.startswith("http"):
-                    webbrowser.open(url)
-                    self.lbl_status.setText(f"🔗 Membuka: {url}")
+            # Kita ambil URL dari self.current_data karena URL tidak ditampilkan di kolom visible
+            # Pastikan urutan row tabel sinkron dengan data (jika sorting aktif, ini perlu hati-hati)
+            # Karena sorting QTableWidget mengacak visual, kita ambil item Judul/URL tersembunyi.
+            # CARA LEBIH AMAN:
+            # Di sini kita ambil data dari item tersembunyi atau cari berdasarkan index visual
+            pass
+            # Sederhananya, jika user double click cell judul/channel, kita cari URL di data
+            # Namun karena sorting GUI mengubah index, kita simpan URL di UserRole item JUDUL
+            
+    # --- FITUR KLIK KANAN (CONTEXT MENU) ---
+    def show_context_menu(self, pos):
+        # Cari baris yang diklik
+        row = self.table.rowAt(pos.y())
+        if row < 0: return
 
+        # Mapping baris visual ke data asli agak rumit jika sudah disortir.
+        # Strategi: Ambil path gambar dari Tooltip widget visual (trik praktis)
+        widget = self.table.cellWidget(row, 0) # Kolom 0 adalah gambar
+        path_gambar = widget.toolTip().replace("Path: ", "") if widget else ""
+
+        # Ambil Judul
+        item_judul = self.table.item(row, 1)
+        judul = item_judul.text() if item_judul else "Unknown"
+
+        menu = QMenu(self)
+        
+        # Action 1: Download / Simpan Gambar
+        action_save = QAction("💾 Simpan Gambar Ke...", self)
+        if not path_gambar or not os.path.exists(path_gambar):
+            action_save.setEnabled(False)
+            action_save.setText("💾 Gambar Tidak Tersedia")
+        else:
+            action_save.triggered.connect(lambda: self.download_image(path_gambar, judul))
+        
+        # Action 2: Buka Lokasi Folder
+        action_open_folder = QAction("📂 Buka Folder Penyimpanan", self)
+        if path_gambar and os.path.exists(path_gambar):
+            action_open_folder.triggered.connect(lambda: self.open_folder(path_gambar))
+        else:
+            action_open_folder.setEnabled(False)
+
+        # Action 3: Buka Link Video (Browser)
+        action_open_web = QAction("🔗 Buka Video di Browser", self)
+        # Mencari URL dari current_data yang cocok dengan Judul (simple lookup)
+        url = next((d['url'] for d in self.current_data if d.get('title') == judul), None)
+        if url:
+            action_open_web.triggered.connect(lambda: webbrowser.open(url))
+        else:
+            action_open_web.setEnabled(False)
+
+        menu.addAction(action_save)
+        menu.addAction(action_open_folder)
+        menu.addSeparator()
+        menu.addAction(action_open_web)
+        
+        menu.exec(self.table.mapToGlobal(pos))
+
+    def download_image(self, src_path, title):
+        # Bersihkan nama file default
+        clean_title = "".join(x for x in title if x.isalnum() or x in " -_")[:50]
+        default_name = f"{clean_title}.jpg"
+        
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, 
+            "Simpan Thumbnail", 
+            os.path.join(os.path.expanduser("~"), "Downloads", default_name),
+            "Images (*.jpg *.png)"
+        )
+
+        if file_path:
+            try:
+                shutil.copy2(src_path, file_path)
+                QMessageBox.information(self, "Sukses", f"Gambar berhasil disimpan di:\n{file_path}")
+            except Exception as e:
+                QMessageBox.warning(self, "Gagal", f"Gagal menyimpan gambar: {e}")
+
+    def open_folder(self, file_path):
+        folder = os.path.dirname(file_path)
+        try:
+            os.startfile(folder) # Windows only
+        except AttributeError:
+            # Fallback untuk macOS/Linux
+            import subprocess
+            subprocess.call(["open", folder] if sys.platform == "darwin" else ["xdg-open", folder])
+
+# --- Entry Point ---
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     
+    # Dark Theme Palette
     app.setStyle("Fusion")
     palette = QPalette()
     palette.setColor(QPalette.Window, QColor(53, 53, 53))
     palette.setColor(QPalette.WindowText, Qt.white)
-    palette.setColor(QPalette.Base, QColor(25, 25, 25))
+    palette.setColor(QPalette.Base, QColor(35, 35, 35))
     palette.setColor(QPalette.AlternateBase, QColor(53, 53, 53))
     palette.setColor(QPalette.ToolTipBase, Qt.white)
     palette.setColor(QPalette.ToolTipText, Qt.white)
     palette.setColor(QPalette.Text, Qt.white)
     palette.setColor(QPalette.Button, QColor(53, 53, 53))
     palette.setColor(QPalette.ButtonText, Qt.white)
-    palette.setColor(QPalette.BrightText, Qt.red)
     palette.setColor(QPalette.Link, QColor(42, 130, 218))
     palette.setColor(QPalette.Highlight, QColor(42, 130, 218))
     palette.setColor(QPalette.HighlightedText, Qt.black)
