@@ -97,6 +97,8 @@ def collect_youtube_trends(page, keyword: str, max_videos: int = 30):
                 "views_text": raw_views,
                 "upload_time": upload_time,
                 "url": video_url,
+                "video_id": extract_video_id(video_url),
+
             })
 
 
@@ -105,3 +107,9 @@ def collect_youtube_trends(page, keyword: str, max_videos: int = 30):
             continue
 
     return results
+def extract_video_id(url: str | None) -> str | None:
+    if not url:
+        return None
+    if "watch?v=" in url:
+        return url.split("watch?v=")[1].split("&")[0]
+    return None

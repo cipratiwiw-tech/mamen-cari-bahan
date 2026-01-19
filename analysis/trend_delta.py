@@ -47,8 +47,9 @@ def compare_daily_csv(today_csv: str, yesterday_csv: str) -> List[Dict]:
         yest = yest_by_url[url]
 
         try:
-            vt = int(today["views"])
-            vy = int(yest["views"])
+            vt = int(today.get("views_api") or today["views"])
+            vy = int(yest.get("views_api") or yest["views"])
+
             delta = vt - vy
         except (TypeError, ValueError):
             vt, vy, delta = None, None, None

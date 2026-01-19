@@ -12,6 +12,8 @@ from utils.time import utc_today
 from analysis.trend_delta import compare_daily_csv, export_trend_delta
 from analysis.export_early_breakout import export_early_breakout_only
 
+from enrich.youtube_api_enricher import enrich_youtube_records
+
 
 DATA_DIR_YT = "data/youtube"
 DATA_DIR_TT = "data/tiktok"
@@ -25,6 +27,8 @@ def run_collect(platform: str, keyword: str) -> str:
     try:
         if platform == "youtube":
             data = collect_youtube_trends(page, keyword, max_videos=20)
+            data = enrich_youtube_records(data)
+
             out_dir = DATA_DIR_YT
         elif platform == "tiktok":
             data = collect_tiktok_trends(page, keyword, max_videos=20)

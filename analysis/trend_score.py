@@ -37,7 +37,8 @@ def compute_trend_score(record: Dict) -> Dict:
     """
     Compute trend score and label for a video record.
     """
-    views = record.get("views_today") or record.get("views")
+    views = record.get("views_api") or record.get("views")
+
     delta = record.get("delta_views")
     age_days = _estimate_age_days(record.get("upload_time"))
 
