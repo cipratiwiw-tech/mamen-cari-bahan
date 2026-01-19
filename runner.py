@@ -3,6 +3,8 @@ from collectors.youtube import collect_youtube_trends
 from storage.export_csv import export_to_csv
 from utils.time import utc_today
 from analysis.trend_delta import compare_daily_csv, export_trend_delta
+from analysis.export_early_breakout import export_early_breakout_only
+
 import os
 
 
@@ -44,9 +46,16 @@ def run_compare(today_csv: str, safe_keyword: str):
 
     delta_records = compare_daily_csv(today_csv, yesterday_csv)
 
-    export_trend_delta(
-        delta_records,
-        output_path=f"data/youtube/trend_{files[-1]}",
+    trend_path = f"data/youtube/trend_{files[-1]}"
+    export_trend_delta(delta_records, output_path=trend_path)
+
+    # --- EXPORT EARLY BREAKOUT ONLY ---
+    date_prefix = files[-1].split("_")[0]
+    early_path = f"data/youtube/early_breakout_{files[-1]}"
+
+    export_early_breakout_only(
+        records=delta_records,
+        output_path=early_path,
     )
 
 
