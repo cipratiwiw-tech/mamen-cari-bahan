@@ -5,6 +5,7 @@ import os
 from typing import Dict, List
 from datetime import datetime
 from analysis.trend_score import score_records
+from analysis.early_breakout import mark_early_breakouts
 
 
 def _read_csv(path: str) -> List[Dict]:
@@ -61,7 +62,9 @@ def compare_daily_csv(today_csv: str, yesterday_csv: str) -> List[Dict]:
             "status": "existing",
         })
 
-    return score_records(results)
+    scored = score_records(results)
+    return mark_early_breakouts(scored)
+
 
 
 
