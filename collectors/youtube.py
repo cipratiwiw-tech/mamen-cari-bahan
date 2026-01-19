@@ -5,6 +5,7 @@ from urllib.parse import quote_plus
 from utils.time import utc_now_iso, utc_today
 
 import re
+import random
 
 
 def parse_view_count(view_text: str | None) -> int | None:
@@ -33,10 +34,11 @@ def parse_view_count(view_text: str | None) -> int | None:
     return int(value)
 
 
-def _scroll_results(page, times: int = 3, delay_ms: int = 2000):
+def _scroll_results(page, times: int = 3):
     for _ in range(times):
-        page.mouse.wheel(0, 3000)
-        page.wait_for_timeout(delay_ms)
+        page.mouse.wheel(0, random.randint(2200, 3400))
+        page.wait_for_timeout(random.randint(900, 1500))
+
 
 
 def collect_youtube_trends(page, keyword: str, max_videos: int = 30):
@@ -45,7 +47,8 @@ def collect_youtube_trends(page, keyword: str, max_videos: int = 30):
     search_url = f"https://www.youtube.com/results?search_query={quote_plus(keyword)}"
     page.goto(search_url, timeout=60000)
     page.wait_for_selector("ytd-video-renderer", timeout=60000)
-    sleep(1)
+    page.wait_for_timeout(random.randint(900, 1400))
+
 
 
 
@@ -57,6 +60,8 @@ def collect_youtube_trends(page, keyword: str, max_videos: int = 30):
 
     for i in range(limit):
         card = video_cards.nth(i)
+        page.wait_for_timeout(random.randint(300, 650))
+
 
         try:
             title_el = card.locator("#video-title").first
