@@ -36,3 +36,27 @@ def export_to_csv(
 
     print(f"[OK] CSV exported: {output_path}")
     return output_path
+
+
+import csv
+import os
+from glob import glob
+
+
+def load_csv_latest(platform: str, safe_keyword: str):
+    data_dir = f"data/{platform}"
+    files = sorted(
+        glob(os.path.join(data_dir, f"*_{safe_keyword}.csv"))
+    )
+
+    if not files:
+        return []
+
+    latest = files[-1]
+    rows = []
+
+    with open(latest, newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        rows.extend(reader)
+
+    return rows
